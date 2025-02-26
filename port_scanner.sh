@@ -31,17 +31,24 @@ for arg in "$@"; do
   fi
 done
 
+# Timeout and delay settings
+TIMEOUT=1
+DELAY=1
+
 # Function to scan a single port
 scan_port() {
   local host=$1
   local scan_type=$2
   local port=$3
 
-  # Check port with a 0.1-second timeout
+  # Random delay to reduce detection
+  sleep $(($RANDOM % $DELAY))
+
+  # Check port with a timeout
   if [ "$scan_type" == "tcp" ]; then
-    timeout 0.1 bash -c "echo >/dev/$scan_type/$host/$port" 2>/dev/null
+    timeout $TIMEOUT bash -c "echo >/dev/$scan_type/$host/$port" 2>/dev/null
   elif [ "$scan_type" == "udp" ]; then
-    timeout 0.1 bash -c "echo >/dev/$scan_type/$host/$port" 2>/dev/null
+    timeout $TIMEOUT bash -c "echo >/dev/$scan_type/$host/$port" 2>/dev/null
   fi
 
   if [ $? -eq 0 ]; then
@@ -60,26 +67,29 @@ scan_host() {
 
   echo "Scanning host: $host (ports $port_start-$port_end, type: $scan_type)"
 
-  # Scan ports in parallel
+  # Scan ports with limited parallelism
   for ((port=port_start; port<=port_end; port++)); do
     current_port=$((current_port + 1))
     # Progress bar
     echo -ne "Progress: $((current_port * 100 / total_ports))%\r"
 
-    # Scan the port in the background
+    # Scan the port in the background (limit parallelism)
     scan_port "$host" "$scan_type" "$port" &
+
+    # Limit the number of parallel processes
+    if (( current_port % 10 == 0 )); then
+      wait
+    fi
   done
 
-  # Wait for all background processes to finish
+  # Wait for remaining background processes to finish
   wait
   echo "Scanning host $host completed."
 }
 
-# Start scanning for each host in the background
+# Start scanning for each host
 for host in "${HOSTS[@]}"; do
-  scan_host "$host" "$SCAN_TYPE" "$PORT_START" "$PORT_END" &
+  scan_host "$host" "$SCAN_TYPE" "$PORT_START" "$PORT_END"
 done
 
-# Wait for all background processes to finish
-wait
 echo "All scans completed."
